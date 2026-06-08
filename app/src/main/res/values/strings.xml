@@ -1,3 +1,10 @@
+<<<<<<< HEAD
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Tracker de Treino</string>
+</resources>
+=======
 <resources>
     <string name="app_name">My Application</string>
 </resources>
+>>>>>>> 875cc9a843b00cb19a93e420b3d465078607f08c

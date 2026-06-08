@@ -1,3 +1,32 @@
+<<<<<<< HEAD
+# Built artifacts
+**/build/
+*.apk
+*.aar
+*.ap_
+
+# Gradle files
+.gradle/
+/build/
+
+# Android Studio local configuration and cache
+local.properties
+.navigation/
+captures/
+.externalNativeBuild/
+.cxx/
+/hprof/
+
+# IDEA files
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# OS files
+.DS_Store
+Thumbs.db
+=======
 *.iml
 .gradle
 /local.properties
@@ -13,3 +42,4 @@
 .externalNativeBuild
 .cxx
 local.properties
+>>>>>>> 875cc9a843b00cb19a93e420b3d465078607f08c
