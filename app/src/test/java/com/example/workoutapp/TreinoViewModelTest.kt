@@ -43,7 +43,7 @@ class TreinoViewModelTest {
     fun testAdicionarTreinoEmLbs() {
         viewModel.limparTreinos()
         // Adiciona 110 lbs. Internamente deve armazenar convertido em KG.
-        viewModel.adicionarTreino("Rosca Concentrada", 110.0, usarLbs = true, TipoExercicio.BRACO)
+        viewModel.adicionarTreino("Rosca Concentrada", 110.0, usarLbs = true, TipoExercicio.BICEPS)
         
         val treinos = viewModel.listaTreinos.value
         assertEquals(1, treinos.size)
@@ -97,7 +97,7 @@ class TreinoViewModelTest {
     @Test
     fun testDecrementarPesoNaoFicaNegativo() {
         viewModel.limparTreinos()
-        viewModel.adicionarTreino("Tríceps Testa", 5.0, usarLbs = false, TipoExercicio.BRACO)
+        viewModel.adicionarTreino("Tríceps Testa", 5.0, usarLbs = false, TipoExercicio.BICEPS)
         val id = viewModel.listaTreinos.value[0].id
 
         viewModel.decrementarPeso(id, usarLbs = false, valor = 10.0) // Decrementa 10 de 5.

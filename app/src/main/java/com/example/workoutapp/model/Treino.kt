@@ -2,35 +2,41 @@ package com.example.workoutapp.model
 
 import java.util.UUID
 
-/**
- * Enumeração representando os tipos de exercício solicitados.
- */
 enum class TipoExercicio(val nomeExibicao: String) {
     PEITO("Peito"),
-    BRACO("Braço"),
+    BICEPS("Bíceps"),
     COSTAS("Costas"),
     PERNAS("Pernas")
 }
 
-/**
- * Classe de dados representando um Treino.
- * O peso base é sempre armazenado em Quilogramas (pesoEmKg) para consistência dos dados.
- */
+enum class TipoTemporizador(val nomeExibicao: String) {
+    TREINO("Treino"),
+    CARDIO("Cardio"),
+    EXERCICIO("Exercício")
+}
+
+data class RegistroPeso(
+    val timestamp: Long,
+    val pesoEmKg: Double
+)
+
+data class RegistroTempo(
+    val timestamp: Long,
+    val tipo: TipoTemporizador,
+    val duracaoSegundos: Int
+)
+
 data class Treino(
     val id: String = UUID.randomUUID().toString(),
     val nome: String,
     val pesoEmKg: Double,
-    val tipo: TipoExercicio
+    val tipo: TipoExercicio,
+    val diaSemana: Int,
+    val historicoPesos: List<RegistroPeso> = listOf(RegistroPeso(System.currentTimeMillis(), pesoEmKg))
 ) {
-    // Fator de conversão padrão: 1 kg = 2.20462 lbs
     companion object {
         const val FATOR_CONVERSAO_LBS: Double = 2.20462
     }
 
-    /**
-     * Retorna o peso convertido para Libras (lbs).
-     */
-    fun obterPesoEmLbs(): Double {
-        return pesoEmKg * FATOR_CONVERSAO_LBS
-    }
+    fun obterPesoEmLbs(): Double = pesoEmKg * FATOR_CONVERSAO_LBS
 }
