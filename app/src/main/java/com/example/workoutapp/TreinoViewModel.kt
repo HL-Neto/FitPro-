@@ -1,130 +1,279 @@
 package com.example.workoutapp
 
+import android.content.Context
+import android.content.SharedPreferences
 import androidx.lifecycle.ViewModel
-import com.example.workoutapp.model.Treino
+import com.example.workoutapp.model.RegistroPeso
+import com.example.workoutapp.model.RegistroTempo
 import com.example.workoutapp.model.TipoExercicio
+import com.example.workoutapp.model.TipoTemporizador
+import com.example.workoutapp.model.Treino
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import org.json.JSONArray
+import org.json.JSONObject
+import java.util.Calendar
 
-/**
- * ViewModel que gerencia a lista de treinos e regras de negócios.
- */
 class TreinoViewModel : ViewModel() {
+
+    private var prefs: SharedPreferences? = null
+    private var sincronizadoComStorage = false
 
     private val _listaTreinos = MutableStateFlow<List<Treino>>(emptyList())
     val listaTreinos: StateFlow<List<Treino>> = _listaTreinos.asStateFlow()
 
+    private val _historicoTempos = MutableStateFlow<List<RegistroTempo>>(emptyList())
+    val historicoTempos: StateFlow<List<RegistroTempo>> = _historicoTempos.asStateFlow()
+
+    private val _diaSelecionado = MutableStateFlow(obterDiaAtual())
+    val diaSelecionado: StateFlow<Int> = _diaSelecionado.asStateFlow()
+
     init {
-        // Inicializa com alguns treinos de exemplo para demonstração imediata
         inicializarDadosExemplo()
     }
 
-    /**
-     * Adiciona treinos iniciais padrão.
-     */
-    private fun inicializarDadosExemplo() {
-        adicionarTreino("Supino Reto", 60.0, usarLbs = false, TipoExercicio.PEITO)
-        adicionarTreino("Rosca Direta", 15.0, usarLbs = false, TipoExercicio.BRACO)
-        adicionarTreino("Puxada Pulley", 50.0, usarLbs = false, TipoExercicio.COSTAS)
-        adicionarTreino("Agachamento Livre", 80.0, usarLbs = false, TipoExercicio.PERNAS)
+    fun inicializar(context: Context) {
+        if (sincronizadoComStorage) return
+
+        prefs = context.getSharedPreferences("fitpro_storage", Context.MODE_PRIVATE)
+        val treinosSalvos = carregarTreinos()
+        val temposSalvos = carregarTempos()
+
+        if (treinosSalvos.isNotEmpty()) {
+            _listaTreinos.value = treinosSalvos
+        } else {
+            persistirTreinos()
+        }
+
+        if (temposSalvos.isNotEmpty()) {
+            _historicoTempos.value = temposSalvos
+        }
+
+        sincronizadoComStorage = true
     }
 
-    /**
-     * Adiciona um novo treino à lista.
-     * @param nome Nome do exercício.
-     * @param peso Peso inicial inserido pelo usuário.
-     * @param usarLbs Se true, o peso informado está em Libras e será convertido para kg internamente.
-     * @param tipo Categoria do exercício.
-     */
-    fun adicionarTreino(nome: String, peso: Double, usarLbs: Boolean, tipo: TipoExercicio) {
+    private fun inicializarDadosExemplo() {
+        val hoje = obterDiaAtual()
+        _listaTreinos.value = listOf(
+            Treino(nome = "Supino Reto", pesoEmKg = 60.0, tipo = TipoExercicio.PEITO, diaSemana = hoje),
+            Treino(nome = "Rosca Direta", pesoEmKg = 15.0, tipo = TipoExercicio.BICEPS, diaSemana = hoje),
+            Treino(nome = "Puxada Pulley", pesoEmKg = 50.0, tipo = TipoExercicio.COSTAS, diaSemana = hoje),
+            Treino(nome = "Agachamento Livre", pesoEmKg = 80.0, tipo = TipoExercicio.PERNAS, diaSemana = hoje)
+        )
+    }
+
+    fun selecionarDiaSemana(diaSemana: Int) {
+        _diaSelecionado.value = diaSemana
+    }
+
+    fun adicionarTreino(
+        nome: String,
+        peso: Double,
+        usarLbs: Boolean,
+        tipo: TipoExercicio,
+        diaSemana: Int = _diaSelecionado.value
+    ) {
         if (nome.isBlank()) return
-        
-        // Converte para KG caso o peso inicial tenha sido inserido em LBS
-        val pesoEmKg = if (usarLbs) {
-            peso / Treino.FATOR_CONVERSAO_LBS
-        } else {
-            peso
-        }
+
+        val pesoEmKg = if (usarLbs) peso / Treino.FATOR_CONVERSAO_LBS else peso
+        val novoPeso = maxOf(0.0, pesoEmKg)
 
         val novoTreino = Treino(
             nome = nome.trim(),
-            pesoEmKg = maxOf(0.0, pesoEmKg),
-            tipo = tipo
+            pesoEmKg = novoPeso,
+            tipo = tipo,
+            diaSemana = diaSemana,
+            historicoPesos = listOf(RegistroPeso(timestamp = System.currentTimeMillis(), pesoEmKg = novoPeso))
         )
-        
-        _listaTreinos.update { lista ->
-            lista + novoTreino
-        }
+
+        _listaTreinos.update { it + novoTreino }
+        persistirTreinos()
     }
 
-    /**
-     * Exclui um treino com base em seu ID.
-     */
+    fun atualizarTreino(id: String, nome: String, tipo: TipoExercicio, diaSemana: Int) {
+        if (nome.isBlank()) return
+
+        _listaTreinos.update { lista ->
+            lista.map { treino ->
+                if (treino.id == id) {
+                    treino.copy(nome = nome.trim(), tipo = tipo, diaSemana = diaSemana)
+                } else {
+                    treino
+                }
+            }
+        }
+        persistirTreinos()
+    }
+
     fun excluirTreino(id: String) {
-        _listaTreinos.update { lista ->
-            lista.filter { treino -> treino.id != id }
-        }
+        _listaTreinos.update { lista -> lista.filter { treino -> treino.id != id } }
+        persistirTreinos()
     }
 
-    /**
-     * Incrementa o peso de um treino.
-     * @param id ID do treino.
-     * @param usarLbs Se true, incrementa na escala de Libras, caso contrário na de Quilogramas.
-     * @param valor Quantidade a ser incrementada.
-     */
     fun incrementarPeso(id: String, usarLbs: Boolean, valor: Double = 1.0) {
         _listaTreinos.update { lista ->
             lista.map { treino ->
                 if (treino.id == id) {
                     val novoPesoEmKg = if (usarLbs) {
-                        // Incrementa em LBS e converte de volta para KG
-                        val pesoLbsAtual = treino.obterPesoEmLbs()
-                        (pesoLbsAtual + valor) / Treino.FATOR_CONVERSAO_LBS
+                        (treino.obterPesoEmLbs() + valor) / Treino.FATOR_CONVERSAO_LBS
                     } else {
-                        // Incrementa diretamente em KG
                         treino.pesoEmKg + valor
                     }
-                    treino.copy(pesoEmKg = maxOf(0.0, novoPesoEmKg))
-                } else {
-                    treino
-                }
+                    val pesoSeguro = maxOf(0.0, novoPesoEmKg)
+                    treino.copy(
+                        pesoEmKg = pesoSeguro,
+                        historicoPesos = treino.historicoPesos + RegistroPeso(
+                            timestamp = System.currentTimeMillis(),
+                            pesoEmKg = pesoSeguro
+                        )
+                    )
+                } else treino
             }
         }
+        persistirTreinos()
     }
 
-    /**
-     * Decrementa o peso de um treino.
-     * Garantido que o peso não ficará menor que zero.
-     * @param id ID do treino.
-     * @param usarLbs Se true, decrementa na escala de Libras, caso contrário na de Quilogramas.
-     * @param valor Quantidade a ser decrementada.
-     */
     fun decrementarPeso(id: String, usarLbs: Boolean, valor: Double = 1.0) {
         _listaTreinos.update { lista ->
             lista.map { treino ->
                 if (treino.id == id) {
                     val novoPesoEmKg = if (usarLbs) {
-                        // Decrementa em LBS e converte de volta para KG
-                        val pesoLbsAtual = treino.obterPesoEmLbs()
-                        (pesoLbsAtual - valor) / Treino.FATOR_CONVERSAO_LBS
+                        (treino.obterPesoEmLbs() - valor) / Treino.FATOR_CONVERSAO_LBS
                     } else {
-                        // Decrementa diretamente em KG
                         treino.pesoEmKg - valor
                     }
-                    treino.copy(pesoEmKg = maxOf(0.0, novoPesoEmKg))
-                } else {
-                    treino
-                }
+                    val pesoSeguro = maxOf(0.0, novoPesoEmKg)
+                    treino.copy(
+                        pesoEmKg = pesoSeguro,
+                        historicoPesos = treino.historicoPesos + RegistroPeso(
+                            timestamp = System.currentTimeMillis(),
+                            pesoEmKg = pesoSeguro
+                        )
+                    )
+                } else treino
             }
         }
+        persistirTreinos()
     }
 
-    /**
-     * Limpa a lista de treinos (útil para testes).
-     */
+    fun registrarTempoTreino(tipoTemporizador: TipoTemporizador, duracaoSegundos: Int) {
+        if (duracaoSegundos <= 0) return
+
+        _historicoTempos.update {
+            it + RegistroTempo(
+                timestamp = System.currentTimeMillis(),
+                tipo = tipoTemporizador,
+                duracaoSegundos = duracaoSegundos
+            )
+        }
+        persistirTempos()
+    }
+
     fun limparTreinos() {
         _listaTreinos.value = emptyList()
+        persistirTreinos()
     }
+
+    private fun persistirTreinos() {
+        val array = JSONArray()
+        _listaTreinos.value.forEach { treino ->
+            val treinoJson = JSONObject()
+                .put("id", treino.id)
+                .put("nome", treino.nome)
+                .put("pesoEmKg", treino.pesoEmKg)
+                .put("tipo", treino.tipo.name)
+                .put("diaSemana", treino.diaSemana)
+
+            val historicoArray = JSONArray()
+            treino.historicoPesos.forEach { registro ->
+                historicoArray.put(
+                    JSONObject()
+                        .put("timestamp", registro.timestamp)
+                        .put("pesoEmKg", registro.pesoEmKg)
+                )
+            }
+            treinoJson.put("historicoPesos", historicoArray)
+            array.put(treinoJson)
+        }
+
+        prefs?.edit()?.putString("treinos", array.toString())?.apply()
+    }
+
+    private fun persistirTempos() {
+        val array = JSONArray()
+        _historicoTempos.value.forEach { registro ->
+            array.put(
+                JSONObject()
+                    .put("timestamp", registro.timestamp)
+                    .put("tipo", registro.tipo.name)
+                    .put("duracaoSegundos", registro.duracaoSegundos)
+            )
+        }
+        prefs?.edit()?.putString("tempos", array.toString())?.apply()
+    }
+
+    private fun carregarTreinos(): List<Treino> {
+        val json = prefs?.getString("treinos", null) ?: return emptyList()
+        return runCatching {
+            val array = JSONArray(json)
+            buildList {
+                for (i in 0 until array.length()) {
+                    val item = array.getJSONObject(i)
+                    val historicoArray = item.optJSONArray("historicoPesos") ?: JSONArray()
+                    val historico = buildList {
+                        for (j in 0 until historicoArray.length()) {
+                            val registro = historicoArray.getJSONObject(j)
+                            add(
+                                RegistroPeso(
+                                    timestamp = registro.getLong("timestamp"),
+                                    pesoEmKg = registro.getDouble("pesoEmKg")
+                                )
+                            )
+                        }
+                    }
+
+                    add(
+                        Treino(
+                            id = item.getString("id"),
+                            nome = item.getString("nome"),
+                            pesoEmKg = item.getDouble("pesoEmKg"),
+                            tipo = TipoExercicio.valueOf(item.getString("tipo")),
+                            diaSemana = item.optInt("diaSemana", Calendar.MONDAY),
+                            historicoPesos = historico.ifEmpty {
+                                listOf(
+                                    RegistroPeso(
+                                        timestamp = System.currentTimeMillis(),
+                                        pesoEmKg = item.getDouble("pesoEmKg")
+                                    )
+                                )
+                            }
+                        )
+                    )
+                }
+            }
+        }.getOrElse { emptyList() }
+    }
+
+    private fun carregarTempos(): List<RegistroTempo> {
+        val json = prefs?.getString("tempos", null) ?: return emptyList()
+        return runCatching {
+            val array = JSONArray(json)
+            buildList {
+                for (i in 0 until array.length()) {
+                    val item = array.getJSONObject(i)
+                    add(
+                        RegistroTempo(
+                            timestamp = item.getLong("timestamp"),
+                            tipo = TipoTemporizador.valueOf(item.getString("tipo")),
+                            duracaoSegundos = item.getInt("duracaoSegundos")
+                        )
+                    )
+                }
+            }
+        }.getOrElse { emptyList() }
+    }
+
+    private fun obterDiaAtual(): Int = Calendar.getInstance().get(Calendar.DAY_OF_WEEK)
 }
